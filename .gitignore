@@ -225,3 +225,5 @@ echo "*.sqlite3" >> .gitignore
 echo ".env" >> .gitignore
 echo "test_backend.py" >> .gitignore
 echo ".venv/" >> .gitignore
+echo "fraud_detection.db" >> .gitignore
+echo "*.db" >> .gitignore
