@@ -1,10 +1,34 @@
-import html
 import json
+import html
 import time
+import base64
 from pathlib import Path
 
 import streamlit as st
 import websocket
+
+
+# ============================================================
+# PATHS
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+DEMO_DIR = BASE_DIR / "Demo"
+
+NORMAL_SCRIPT = DEMO_DIR / "normal_call_script.json"
+SCAM_SCRIPT = DEMO_DIR / "scam_call_script.json"
+
+ALARM_PATH = DEMO_DIR / "alarm_sound_mp3"
+
+
+# ============================================================
+# BACKEND
+# ============================================================
+
+BACKEND_WS_URL = "ws://127.0.0.1:8000/ws/assess-call"
+
+CHUNK_DELAY = 1.5
 
 
 # ============================================================
@@ -20,424 +44,333 @@ st.set_page_config(
 
 
 # ============================================================
-# PATHS
-# ============================================================
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DEMO_DIR = BASE_DIR / "Demo"
-
-
-# ============================================================
-# BACKEND
-# ============================================================
-
-BACKEND_WS_URL = "ws://127.0.0.1:8000/ws/assess-call"
-
-# Delay between transcript turns.
-# Lower this if you want a faster demonstration.
-CHUNK_DELAY = 1.5
-
-
-# ============================================================
-# LOAD DEMO SCRIPT
-# ============================================================
-
-def load_demo_script(call_type):
-
-    if call_type == "Suspicious bank caller":
-        file_path = DEMO_DIR / "scam_call_script.json"
-    else:
-        file_path = DEMO_DIR / "normal_call_script.json"
-
-    with open(
-        file_path,
-        "r",
-        encoding="utf-8",
-    ) as file:
-        return json.load(file)
-
-
-# ============================================================
 # SESSION STATE
 # ============================================================
 
 defaults = {
-    "call_started": False,
     "call_running": False,
-    "session_id": None,
-    "script": [],
-    "visible_transcript": [],
-    "call_type": "Suspicious bank caller",
-    "risk_data": None,
-    "backend_error": None,
+    "call_started": False,
+    "scenario": "Scam Call",
+    "session_id": "",
+    "transcript": [],
+    "risk_score": 0.0,
+    "signals": [],
+    "reasoning": "Waiting for call analysis...",
+    "should_warn": False,
+    "alarm_played": False,
 }
 
 for key, value in defaults.items():
-
     if key not in st.session_state:
         st.session_state[key] = value
 
 
 # ============================================================
-# CUSTOM CSS
+# CSS
 # ============================================================
 
 st.markdown(
     """
 <style>
 
-/* =========================================================
-   MAIN BACKGROUND
-   ========================================================= */
+html, body, [class*="css"] {
+    font-family: Arial, sans-serif;
+}
 
 .stApp {
     background:
-        radial-gradient(
-            circle at top right,
-            rgba(22, 115, 79, 0.20),
-            transparent 35%
-        ),
-        linear-gradient(
-            135deg,
-            #021812 0%,
-            #03271c 50%,
-            #01150f 100%
-        );
-
-    color: #f4f7f5;
+        radial-gradient(circle at top left, rgba(48, 103, 82, 0.35), transparent 35%),
+        linear-gradient(135deg, #071d16 0%, #0d3025 50%, #123d30 100%);
+    color: #f5faf7;
 }
 
-.block-container {
-    max-width: 1250px;
-    padding-top: 2rem;
-    padding-bottom: 3rem;
+/* Sidebar */
+
+section[data-testid="stSidebar"] {
+    background: #061710;
+    border-right: 1px solid rgba(255,255,255,0.08);
 }
 
-
-/* =========================================================
-   HIDE STREAMLIT ELEMENTS
-   ========================================================= */
-
-#MainMenu {
-    visibility: hidden;
-}
-
-footer {
-    visibility: hidden;
-}
-
-
-/* =========================================================
-   SIDEBAR
-   ========================================================= */
-
-[data-testid="stSidebar"] {
-    background:
-        linear-gradient(
-            180deg,
-            #02261b,
-            #011a12
-        );
-
-    border-right: 1px solid #14563d;
-}
-
-[data-testid="stSidebar"] .block-container {
-    padding-top: 1.5rem;
+section[data-testid="stSidebar"] * {
+    color: #e9f5ef !important;
 }
 
 .sidebar-title {
-    text-align: center;
-    font-size: 25px;
+    font-size: 26px;
     font-weight: 800;
-    color: #f4f7f5;
-    margin-top: 5px;
+    margin-bottom: 4px;
 }
 
 .sidebar-subtitle {
-    text-align: center;
-    color: #65dda0;
-    font-size: 12px;
-    line-height: 1.5;
-    margin-top: 5px;
+    font-size: 14px;
+    color: #a9c2b7;
+    margin-bottom: 30px;
 }
 
-.sidebar-icon {
-    text-align: center;
-    font-size: 48px;
-    margin-bottom: 5px;
-}
-
-.sidebar-heading {
-    color: #62dda0;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 1.2px;
+.sidebar-status {
+    background: rgba(55, 190, 128, 0.12);
+    border: 1px solid rgba(55, 190, 128, 0.25);
+    padding: 14px;
+    border-radius: 14px;
     margin-top: 20px;
-    margin-bottom: 10px;
 }
 
-.sidebar-box {
-    background: rgba(5, 57, 40, 0.7);
-    border: 1px solid #176344;
-    border-radius: 12px;
-    padding: 13px;
-    margin-top: 10px;
-}
-
-.sidebar-box-title {
-    color: #f0f5f2;
+.sidebar-status-title {
     font-weight: 700;
+    font-size: 15px;
+}
+
+.sidebar-status-text {
     font-size: 13px;
-}
-
-.sidebar-box-text {
-    color: #91afa1;
-    font-size: 11px;
-    line-height: 1.6;
-    margin-top: 5px;
+    color: #a9c2b7;
+    margin-top: 4px;
 }
 
 
-/* =========================================================
-   HEADER
-   ========================================================= */
+/* Main header */
 
 .main-title {
-    font-family: Georgia, serif;
-    font-size: 38px;
-    font-weight: 800;
-    color: #f4f6f5;
-    margin-bottom: 0;
+    font-size: 42px;
+    font-weight: 850;
+    letter-spacing: -1px;
+    margin-bottom: 4px;
 }
 
 .main-subtitle {
-    color: #62dda0;
-    font-size: 15px;
-    margin-top: 3px;
+    color: #b6cec3;
+    font-size: 17px;
+    margin-bottom: 24px;
 }
 
 .system-active {
-    text-align: right;
-    margin-top: 10px;
-}
-
-.system-badge {
-    display: inline-block;
-    border: 1px solid #176b4a;
-    background: rgba(5, 54, 38, 0.7);
-    border-radius: 25px;
-    padding: 8px 15px;
-    color: #cfe8db;
-    font-size: 12px;
-}
-
-.green-dot {
-    color: #32e783;
-}
-
-h1,
-h2,
-h3 {
-    color: #f4f7f5 !important;
-}
-
-
-/* =========================================================
-   CARDS
-   ========================================================= */
-
-[data-testid="stVerticalBlockBorderWrapper"] {
-    background:
-        linear-gradient(
-            145deg,
-            rgba(6, 48, 34, 0.96),
-            rgba(3, 34, 24, 0.96)
-        );
-
-    border: 1px solid #155b40 !important;
-    border-radius: 15px !important;
-}
-
-
-/* =========================================================
-   BUTTONS
-   ========================================================= */
-
-.stButton > button {
-    border-radius: 8px;
-    min-height: 42px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(55, 190, 128, 0.12);
+    border: 1px solid rgba(55, 190, 128, 0.28);
+    color: #9df0c4;
+    padding: 8px 14px;
+    border-radius: 30px;
+    font-size: 14px;
     font-weight: 700;
-    border: 1px solid #1b7652;
-    background: #073326;
-    color: #e6f2ec;
 }
 
-.stButton > button:hover {
-    border-color: #38e58b;
-    color: white;
-}
-
-.stButton > button[kind="primary"] {
-    background:
-        linear-gradient(
-            135deg,
-            #1eb86a,
-            #159b59
-        ) !important;
-
-    border: 1px solid #42e78d !important;
-    color: white !important;
+.active-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #54d890;
+    display: inline-block;
 }
 
 
-/* =========================================================
-   SELECTBOX
-   ========================================================= */
+/* Cards */
 
-label {
-    color: #91afa1 !important;
+.card {
+    background: rgba(255,255,255,0.055);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 20px;
+    padding: 22px;
+    margin-bottom: 18px;
+    backdrop-filter: blur(8px);
 }
 
-div[data-baseweb="select"] > div {
-    background-color: #06251a !important;
-    border: 1px solid #176344 !important;
-    border-radius: 8px !important;
+.card-title {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 16px;
+}
+
+.card-subtitle {
+    color: #9fb8ad;
+    font-size: 13px;
+    margin-top: -10px;
+    margin-bottom: 15px;
 }
 
 
-/* =========================================================
-   TRANSCRIPT
-   ========================================================= */
+/* Transcript */
 
 .transcript-box {
-    background: rgba(1, 24, 17, 0.65);
-    border: 1px dashed #19704e;
-    border-radius: 12px;
-    padding: 15px;
-    max-height: 620px;
+    background: rgba(0,0,0,0.16);
+    border-radius: 16px;
+    padding: 16px;
+    min-height: 360px;
+    max-height: 470px;
     overflow-y: auto;
 }
 
-.message {
-    background: rgba(8, 52, 37, 0.75);
-    border-radius: 8px;
-    padding: 10px;
-    margin-bottom: 8px;
-    border-left: 3px solid #20ca72;
+.message-row {
+    display: flex;
+    margin-bottom: 13px;
+    width: 100%;
 }
 
-.caller {
-    color: #72e3a7;
-    font-weight: 700;
+.message-row.caller {
+    justify-content: flex-start;
 }
 
-.user {
-    color: #8eb7ff;
-    font-weight: 700;
+.message-row.user {
+    justify-content: flex-end;
+}
+
+.message-bubble {
+    max-width: 82%;
+    padding: 13px 16px;
+    border-radius: 17px;
+    line-height: 1.5;
+    font-size: 16px;
+}
+
+.caller-bubble {
+    background: #173d30;
+    border-bottom-left-radius: 5px;
+}
+
+.user-bubble {
+    background: #28644d;
+    border-bottom-right-radius: 5px;
+}
+
+.speaker-label {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    opacity: 0.72;
+    margin-bottom: 4px;
 }
 
 .message-text {
-    color: #d4e3db;
-    font-size: 14px;
-    line-height: 1.5;
-}
-
-.empty {
-    text-align: center;
-    padding: 35px 10px;
-    color: #719688;
-    font-style: italic;
+    font-size: 16px;
 }
 
 
-/* =========================================================
-   RISK
-   ========================================================= */
+/* Risk */
 
 .risk-number {
-    text-align: center;
-    font-size: 45px;
-    font-weight: 800;
-    color: white;
-}
-
-.high-risk {
-    text-align: center;
-    color: #ff6862;
-    font-weight: 800;
-}
-
-.low-risk {
-    text-align: center;
-    color: #58df96;
-    font-weight: 800;
-}
-
-.awaiting {
-    text-align: center;
-    color: #829e91;
-    font-weight: 700;
-}
-
-.live-status {
-    text-align: center;
-    color: #62dda0;
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 54px;
+    font-weight: 900;
+    line-height: 1;
     margin-top: 8px;
 }
 
+.risk-label {
+    font-size: 16px;
+    font-weight: 800;
+    margin-top: 8px;
+}
 
-/* =========================================================
-   SIGNALS
-   ========================================================= */
+.risk-bar {
+    height: 16px;
+    background: rgba(255,255,255,0.10);
+    border-radius: 20px;
+    overflow: hidden;
+    margin-top: 20px;
+}
+
+.risk-fill {
+    height: 100%;
+    border-radius: 20px;
+}
+
+.risk-low {
+    background: #46c986;
+}
+
+.risk-medium {
+    background: #e5bd55;
+}
+
+.risk-high {
+    background: #ef6c67;
+}
+
+
+/* Signals */
 
 .signal {
-    background: rgba(7, 51, 36, 0.8);
-    border: 1px solid #196447;
-    border-left: 4px solid #2bd77c;
-    border-radius: 9px;
-    padding: 12px;
-    margin-bottom: 9px;
+    background: rgba(255,255,255,0.045);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 13px;
+    padding: 13px 14px;
+    margin-bottom: 10px;
 }
 
-.signal-title {
-    color: #edf5f0;
-    font-weight: 700;
+.signal-name {
+    font-weight: 800;
+    font-size: 14px;
 }
 
-.signal-text {
-    color: #91aa9e;
-    font-size: 12px;
-    margin-top: 5px;
-    line-height: 1.5;
+.signal-evidence {
+    color: #aec5bb;
+    font-size: 13px;
+    margin-top: 4px;
+}
+
+.signal-icon {
+    font-size: 17px;
+    margin-right: 7px;
 }
 
 
-/* =========================================================
-   AI ASSESSMENT
-   ========================================================= */
+/* Assessment */
 
-.ai-badge {
-    display: inline-block;
-    border: 1px solid #217a54;
+.reasoning-box {
+    background: rgba(255,255,255,0.045);
+    border-left: 4px solid #63c99a;
+    border-radius: 10px;
+    padding: 15px 17px;
+    color: #d8e9e1;
+    line-height: 1.55;
+}
+
+
+/* Warning */
+
+.warning-box {
+    background: linear-gradient(
+        135deg,
+        rgba(150, 32, 32, 0.95),
+        rgba(100, 18, 18, 0.97)
+    );
+    border: 2px solid rgba(255, 110, 110, 0.75);
+    border-radius: 22px;
+    padding: 28px;
+    margin: 20px 0;
+    text-align: center;
+    box-shadow: 0 0 35px rgba(255, 60, 60, 0.22);
+}
+
+.warning-title {
+    font-size: 30px;
+    font-weight: 900;
+    margin-bottom: 10px;
+}
+
+.warning-text {
+    font-size: 17px;
+    line-height: 1.55;
+    color: #ffe7e7;
+}
+
+
+/* Call controls */
+
+.control-card {
+    background: rgba(255,255,255,0.055);
+    border: 1px solid rgba(255,255,255,0.09);
     border-radius: 20px;
-    padding: 5px 12px;
-    color: #8ce6b3;
-    font-size: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
 }
-
-
-/* =========================================================
-   FOOTER
-   ========================================================= */
 
 .footer {
     text-align: center;
-    color: #62d998;
+    color: #75998b;
     font-size: 12px;
-    padding: 15px;
+    margin-top: 35px;
+    padding-bottom: 20px;
 }
 
 </style>
@@ -447,705 +380,483 @@ div[data-baseweb="select"] > div {
 
 
 # ============================================================
-# SIDEBAR
+# HELPERS
 # ============================================================
 
-with st.sidebar:
+def load_script(scenario):
+    if scenario == "Scam Call":
+        script_path = SCAM_SCRIPT
+    else:
+        script_path = NORMAL_SCRIPT
 
-    st.markdown(
-        '<div class="sidebar-icon">🛡️</div>',
-        unsafe_allow_html=True,
-    )
+    if not script_path.exists():
+        st.error(f"Demo script not found: {script_path}")
+        return []
 
-    st.markdown(
-        '<div class="sidebar-title">Fraud Guardian</div>',
-        unsafe_allow_html=True,
-    )
+    try:
+        with open(script_path, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except Exception as exc:
+        st.error(f"Could not load demo script: {exc}")
+        return []
 
-    st.markdown(
-        '<div class="sidebar-subtitle">'
-        'Real-time in-call<br>fraud intelligence'
-        '</div>',
-        unsafe_allow_html=True,
-    )
 
-    st.divider()
+def find_alarm_file():
+    """
+    Finds an alarm audio file inside Demo/alarm_sound_mp3.
 
-    st.markdown(
-        '<div class="sidebar-heading">NAVIGATION</div>',
-        unsafe_allow_html=True,
-    )
+    Supports:
+    - alarm_sound_mp3 as a file
+    - alarm_sound_mp3 as a directory
+    - mp3, wav, ogg, m4a files
+    """
 
-    st.button(
-        "📞  Call Monitor",
-        use_container_width=True,
-    )
+    if ALARM_PATH.is_file():
+        return ALARM_PATH
 
-    st.button(
-        "◷  Risk History",
-        use_container_width=True,
-    )
+    if ALARM_PATH.is_dir():
+        supported = {".mp3", ".wav", ".ogg", ".m4a"}
 
-    st.button(
-        "⚙️  Settings",
-        use_container_width=True,
-    )
+        for file in ALARM_PATH.rglob("*"):
+            if file.is_file() and file.suffix.lower() in supported:
+                return file
 
-    st.divider()
+    # Fallback: search Demo directory
+    if DEMO_DIR.exists():
+        supported = {".mp3", ".wav", ".ogg", ".m4a"}
 
-    st.markdown(
-        '<div class="sidebar-heading">SYSTEM STATUS</div>',
-        unsafe_allow_html=True,
-    )
+        for file in DEMO_DIR.rglob("*"):
+            if file.is_file() and file.suffix.lower() in supported:
+                return file
 
-    st.markdown(
-        '<div class="sidebar-box">'
-        '<div class="sidebar-box-title">'
-        '🟢 System active'
-        '</div>'
-        '<div class="sidebar-box-text">'
-        'FastAPI backend and AI risk assessment are connected.'
-        '</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    return None
 
-    st.markdown(
-        '<div class="sidebar-box">'
-        '<div class="sidebar-box-title">'
-        '🛡️ About'
-        '</div>'
-        '<div class="sidebar-box-text">'
-        'Fraud Guardian detects suspicious patterns '
-        'in real-time phone conversations.'
-        '</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+
+def get_audio_mime(audio_path):
+    suffix = audio_path.suffix.lower()
+
+    if suffix == ".mp3":
+        return "audio/mpeg"
+
+    if suffix == ".wav":
+        return "audio/wav"
+
+    if suffix == ".ogg":
+        return "audio/ogg"
+
+    if suffix == ".m4a":
+        return "audio/mp4"
+
+    return "audio/mpeg"
+
+
+def play_alarm():
+    """
+    Injects an autoplaying audio element.
+
+    The Start Call button is a user interaction, so modern browsers
+    are more likely to allow autoplay during the demo.
+    """
+
+    alarm_file = find_alarm_file()
+
+    if alarm_file is None:
+        st.warning(
+            "⚠️ Alarm file not found. Put an MP3/WAV/OGG file inside "
+            "Demo/alarm_sound_mp3."
+        )
+        return
+
+    try:
+        audio_bytes = alarm_file.read_bytes()
+        encoded = base64.b64encode(audio_bytes).decode("utf-8")
+        mime = get_audio_mime(alarm_file)
+
+        audio_html = (
+            f'<audio autoplay>'
+            f'<source src="data:{mime};base64,{encoded}" type="{mime}">'
+            f'</audio>'
+        )
+
+        st.markdown(audio_html, unsafe_allow_html=True)
+
+    except Exception as exc:
+        st.warning(f"Could not play alarm sound: {exc}")
+
+
+def risk_level(score):
+    if score >= 0.70:
+        return "HIGH RISK", "risk-high"
+
+    if score >= 0.40:
+        return "MEDIUM RISK", "risk-medium"
+
+    return "LOW RISK", "risk-low"
 
 
 # ============================================================
-# HEADER
+# UI RENDER FUNCTIONS
 # ============================================================
 
-header_left, header_right = st.columns([4, 1])
-
-with header_left:
-
+def render_header():
     st.markdown(
-        '<div class="main-title">Fraud Guardian</div>',
+        '<div class="main-title">🛡️ Fraud Guardian</div>',
         unsafe_allow_html=True,
     )
 
     st.markdown(
         '<div class="main-subtitle">'
-        'Real-time in-call fraud intelligence'
-        '</div>',
+        "Real-Time In-Call Fraud Detection"
+        "</div>",
         unsafe_allow_html=True,
     )
-
-
-with header_right:
 
     st.markdown(
         '<div class="system-active">'
-        '<span class="system-badge">'
-        '<span class="green-dot">●</span> System active'
-        '</span>'
-        '</div>',
+        '<span class="active-dot"></span>'
+        "Detection System Active"
+        "</div>",
         unsafe_allow_html=True,
     )
 
 
-st.divider()
+def render_sidebar():
+    with st.sidebar:
+        st.markdown(
+            '<div class="sidebar-title">🛡️ Fraud Guardian</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            '<div class="sidebar-subtitle">'
+            "Protecting vulnerable callers from fraud and manipulation."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("### Navigation")
+
+        st.markdown("📞 **Live Call**")
+        st.markdown("📊 Risk Analysis")
+        st.markdown("🧠 AI Assessment")
+        st.markdown("📝 Call History")
+
+        st.markdown(
+            '<div class="sidebar-status">'
+            '<div class="sidebar-status-title">● System Online</div>'
+            '<div class="sidebar-status-text">'
+            "AI fraud monitoring is ready."
+            "</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
 
-# ============================================================
-# CALL CONTROL
-# ============================================================
-
-with st.container(border=True):
-
-    st.subheader("☎  Call control")
-
-    col1, col2, col3, col4 = st.columns(
-        [2.5, 1.5, 1.1, 1]
+def render_call_controls():
+    st.markdown(
+        '<div class="control-card">'
+        '<div class="card-title">📞 Call Simulation</div>'
+        "</div>",
+        unsafe_allow_html=True,
     )
 
-    with col1:
+    col1, col2, col3 = st.columns([2, 1, 1])
 
-        call_type = st.selectbox(
+    with col1:
+        scenario = st.selectbox(
             "Scenario",
-            [
-                "Suspicious bank caller",
-                "Normal family call",
-            ],
+            ["Scam Call", "Normal Call"],
+            index=0 if st.session_state.scenario == "Scam Call" else 1,
             disabled=st.session_state.call_running,
         )
+
+        st.session_state.scenario = scenario
 
     with col2:
-
-        if st.session_state.call_running:
-
-            st.write("🔴 Call in progress")
-
-        elif st.session_state.call_started:
-
-            st.write("🟢 Call completed")
-
-        else:
-
-            st.write("No active call")
-
-    with col3:
-
-        start_call = st.button(
-            "▶ Start call",
+        start_clicked = st.button(
+            "▶ Start Call",
             use_container_width=True,
-            type="primary",
             disabled=st.session_state.call_running,
         )
 
-    with col4:
-
-        stop_call = st.button(
-            "■ Stop",
+    with col3:
+        stop_clicked = st.button(
+            "■ Stop Call",
             use_container_width=True,
+            disabled=not st.session_state.call_running,
         )
 
+    return start_clicked, stop_clicked
+
+
+def render_transcript(container):
+    parts = []
+
+    for item in st.session_state.transcript:
+        speaker = item["speaker"]
+        text = html.escape(str(item["text"]))
+
+        if speaker == "caller":
+            parts.append(
+                '<div class="message-row caller">'
+                '<div class="message-bubble caller-bubble">'
+                '<div class="speaker-label">Caller</div>'
+                f'<div class="message-text">{text}</div>'
+                "</div>"
+                "</div>"
+            )
+        else:
+            parts.append(
+                '<div class="message-row user">'
+                '<div class="message-bubble user-bubble">'
+                '<div class="speaker-label">You</div>'
+                f'<div class="message-text">{text}</div>'
+                "</div>"
+                "</div>"
+            )
+
+    if not parts:
+        parts.append(
+            '<div style="text-align:center; padding:120px 20px; '
+            'color:#78998c;">'
+            "Waiting for the call to begin..."
+            "</div>"
+        )
+
+    transcript_html = (
+        '<div class="card">'
+        '<div class="card-title">💬 Live Transcript</div>'
+        '<div class="card-subtitle">'
+        "Conversation is analyzed in real time."
+        "</div>"
+        '<div class="transcript-box">'
+        + "".join(parts)
+        + "</div>"
+        "</div>"
+    )
+
+    container.markdown(
+        transcript_html,
+        unsafe_allow_html=True,
+    )
+
+
+def render_risk(container):
+    score = max(0.0, min(1.0, float(st.session_state.risk_score)))
+    percentage = int(round(score * 100))
+
+    label, css_class = risk_level(score)
+
+    width = f"{percentage}%"
+
+    risk_html = (
+        '<div class="card">'
+        '<div class="card-title">🚨 Fraud Risk</div>'
+        '<div class="risk-number">'
+        f"{percentage}%"
+        "</div>"
+        f'<div class="risk-label">{label}</div>'
+        '<div class="risk-bar">'
+        f'<div class="risk-fill {css_class}" style="width:{width};"></div>'
+        "</div>"
+        "</div>"
+    )
+
+    container.markdown(
+        risk_html,
+        unsafe_allow_html=True,
+    )
+
+
+def render_signals(container):
+    present_signals = [
+        signal
+        for signal in st.session_state.signals
+        if signal.get("present", False)
+    ]
+
+    parts = [
+        '<div class="card">',
+        '<div class="card-title">🔎 Detected Signals</div>',
+    ]
+
+    if not present_signals:
+        parts.append(
+            '<div style="color:#9fb8ad; padding:10px 0;">'
+            "No significant fraud signals detected yet."
+            "</div>"
+        )
+
+    else:
+        for signal in present_signals:
+            name = html.escape(
+                str(signal.get("name", "Unknown")).replace("_", " ").title()
+            )
+
+            evidence = html.escape(
+                str(signal.get("evidence", ""))
+            )
+
+            parts.append(
+                '<div class="signal">'
+                f'<div class="signal-name">'
+                f'<span class="signal-icon">⚠️</span>{name}'
+                "</div>"
+                f'<div class="signal-evidence">{evidence}</div>'
+                "</div>"
+            )
+
+    parts.append("</div>")
+
+    container.markdown(
+        "".join(parts),
+        unsafe_allow_html=True,
+    )
+
+
+def render_assessment(container):
+    reasoning = html.escape(
+        str(st.session_state.reasoning)
+    )
+
+    assessment_html = (
+        '<div class="card">'
+        '<div class="card-title">🧠 AI Risk Assessment</div>'
+        '<div class="reasoning-box">'
+        f"{reasoning}"
+        "</div>"
+        "</div>"
+    )
+
+    container.markdown(
+        assessment_html,
+        unsafe_allow_html=True,
+    )
+
+
+def render_warning(container):
+    if not st.session_state.should_warn:
+        container.empty()
+        return
+
+    warning_html = (
+        '<div class="warning-box">'
+        '<div class="warning-title">🚨 FRAUD WARNING</div>'
+        '<div class="warning-text">'
+        "<strong>This call shows multiple signs of fraud.</strong><br><br>"
+        "Do not share OTPs, PINs, passwords, or banking information. "
+        "Do not follow instructions to hide the call from your family "
+        "or bank staff.<br><br>"
+        "<strong>Stop the call and verify independently.</strong>"
+        "</div>"
+        "</div>"
+    )
+
+    container.markdown(
+        warning_html,
+        unsafe_allow_html=True,
+    )
+
 
 # ============================================================
-# STOP CALL
+# SIDEBAR + HEADER
 # ============================================================
 
-if stop_call:
+render_sidebar()
 
-    st.session_state.call_started = False
-    st.session_state.call_running = False
-    st.session_state.session_id = None
-    st.session_state.script = []
-    st.session_state.visible_transcript = []
-    st.session_state.risk_data = None
-    st.session_state.backend_error = None
+render_header()
 
-    st.rerun()
+st.markdown("<br>", unsafe_allow_html=True)
+
+
+# ============================================================
+# CALL CONTROLS
+# ============================================================
+
+start_clicked, stop_clicked = render_call_controls()
 
 
 # ============================================================
 # MAIN DASHBOARD PLACEHOLDERS
 # ============================================================
 
-left, right = st.columns(
-    [1.35, 1]
-)
+left_col, right_col = st.columns([1.55, 1])
 
+with left_col:
+    transcript_placeholder = st.empty()
 
-# ============================================================
-# TRANSCRIPT
-# ============================================================
-
-with left:
-
-    with st.container(border=True):
-
-        st.subheader("▣  Live transcript")
-
-        transcript_placeholder = st.empty()
-
-
-# ============================================================
-# RISK
-# ============================================================
-
-with right:
-
-    with st.container(border=True):
-
-        st.subheader("♢  Fraud risk")
-
-        risk_placeholder = st.empty()
-
-
-st.write("")
-
-
-# ============================================================
-# SIGNALS
-# ============================================================
-
-with st.container(border=True):
-
-    st.subheader("⌕  Detected fraud signals")
-
+with right_col:
+    risk_placeholder = st.empty()
     signals_placeholder = st.empty()
-
-
-st.write("")
-
-
-# ============================================================
-# AI ASSESSMENT
-# ============================================================
-
-with st.container(border=True):
-
-    st.subheader("☆  AI risk assessment")
-
     assessment_placeholder = st.empty()
 
-
-st.write("")
-
-
-# ============================================================
-# TRANSCRIPT RENDERER
-# ============================================================
-
-def render_transcript(chunks):
-
-    if not chunks:
-
-        transcript_placeholder.markdown(
-            """
-            <div class="empty">
-                🎙️
-                <br><br>
-                Start a call to begin real-time monitoring.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        return
-
-    parts = [
-        '<div class="transcript-box">'
-    ]
-
-    for chunk in chunks:
-
-        speaker = chunk.get(
-            "speaker",
-            "caller",
-        )
-
-        text = html.escape(
-            str(
-                chunk.get(
-                    "text",
-                    "",
-                )
-            )
-        )
-
-        if speaker == "caller":
-
-            parts.append(
-                '<div class="message">'
-                '<span class="caller">'
-                '🔴 Caller'
-                '</span>'
-                '<br>'
-                '<span class="message-text">'
-                f'{text}'
-                '</span>'
-                '</div>'
-            )
-
-        else:
-
-            parts.append(
-                '<div class="message">'
-                '<span class="user">'
-                '🔵 You'
-                '</span>'
-                '<br>'
-                '<span class="message-text">'
-                f'{text}'
-                '</span>'
-                '</div>'
-            )
-
-    parts.append(
-        '</div>'
-    )
-
-    transcript_placeholder.markdown(
-        "".join(parts),
-        unsafe_allow_html=True,
-    )
-
-
-# ============================================================
-# RISK RENDERER
-# ============================================================
-
-def render_risk(risk_data):
-
-    if not risk_data:
-
-        with risk_placeholder.container():
-
-            st.markdown(
-                '<div class="risk-number">--%</div>',
-                unsafe_allow_html=True,
-            )
-
-            st.markdown(
-                '<div class="awaiting">'
-                'Awaiting call'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
-            st.progress(0)
-
-            st.caption(
-                "🟢 Awaiting call"
-            )
-
-        return
-
-    risk = float(
-        risk_data.get(
-            "risk_score",
-            0,
-        )
-    )
-
-    risk = max(
-        0.0,
-        min(
-            1.0,
-            risk,
-        ),
-    )
-
-    should_warn = bool(
-        risk_data.get(
-            "should_warn",
-            False,
-        )
-    )
-
-    with risk_placeholder.container():
-
-        st.markdown(
-            f'<div class="risk-number">'
-            f'{risk * 100:.0f}%'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        if should_warn:
-
-            st.markdown(
-                '<div class="high-risk">'
-                '🔴 HIGH RISK'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
-            st.progress(risk)
-
-            st.caption(
-                "High-risk behavior detected"
-            )
-
-        else:
-
-            st.markdown(
-                '<div class="low-risk">'
-                '🟢 LOW RISK'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
-            st.progress(risk)
-
-            st.caption(
-                "No significant fraud indicators"
-            )
-
-        st.markdown(
-            '<div class="live-status">'
-            '● Live AI analysis'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-
-
-# ============================================================
-# SIGNAL RENDERER
-# ============================================================
-
-def render_signals(risk_data):
-
-    if not risk_data:
-
-        signals_placeholder.info(
-            "🛡️ Start a call to detect fraud signals."
-        )
-
-        return
-
-    signals = risk_data.get(
-        "signals",
-        [],
-    )
-
-    detected = [
-        signal
-        for signal in signals
-        if signal.get(
-            "present",
-            False,
-        )
-    ]
-
-    if not detected:
-
-        signals_placeholder.info(
-            "🛡️ No suspicious signals detected yet."
-        )
-
-        return
-
-    readable_names = {
-
-        "urgency":
-            "🚨 Urgency",
-
-        "secrecy":
-            "🔒 Secrecy / Isolation",
-
-        "authority_impersonation":
-            "🏦 Authority Impersonation",
-
-        "credential_request":
-            "🔐 Credential Request",
-
-        "coached_script":
-            "🗣️ Coached Script",
-    }
-
-    with signals_placeholder.container():
-
-        col1, col2 = st.columns(2)
-
-        for index, signal in enumerate(
-            detected
-        ):
-
-            target = (
-                col1
-                if index % 2 == 0
-                else col2
-            )
-
-            name = signal.get(
-                "name",
-                "Unknown signal",
-            )
-
-            evidence = signal.get(
-                "evidence",
-                "No evidence available.",
-            )
-
-            title = readable_names.get(
-                name,
-                name.replace(
-                    "_",
-                    " ",
-                ).title(),
-            )
-
-            title = html.escape(
-                str(title)
-            )
-
-            evidence = html.escape(
-                str(evidence)
-            )
-
-            with target:
-
-                st.markdown(
-                    '<div class="signal">'
-                    '<div class="signal-title">'
-                    f'{title}'
-                    '</div>'
-                    '<div class="signal-text">'
-                    '<b>Evidence:</b> '
-                    f'{evidence}'
-                    '</div>'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-
-
-# ============================================================
-# AI ASSESSMENT RENDERER
-# ============================================================
-
-def render_assessment(risk_data):
-
-    if not risk_data:
-
-        with assessment_placeholder.container():
-
-            st.markdown(
-                '<span class="ai-badge">'
-                'Awaiting call'
-                '</span>',
-                unsafe_allow_html=True,
-            )
-
-            st.write("")
-
-            st.write(
-                "An assessment will appear once a call "
-                "is being monitored."
-            )
-
-        return
-
-    should_warn = bool(
-        risk_data.get(
-            "should_warn",
-            False,
-        )
-    )
-
-    reasoning = risk_data.get(
-        "reasoning",
-        "No reasoning was returned.",
-    )
-
-    with assessment_placeholder.container():
-
-        if should_warn:
-
-            st.markdown(
-                '<span class="ai-badge">'
-                'High-risk conversation'
-                '</span>',
-                unsafe_allow_html=True,
-            )
-
-        else:
-
-            st.markdown(
-                '<span class="ai-badge">'
-                'Monitoring conversation'
-                '</span>',
-                unsafe_allow_html=True,
-            )
-
-        st.write("")
-
-        st.write(
-            reasoning
-        )
-
-        st.caption(
-            "Live assessment generated by the AI "
-            "fraud detection backend."
-        )
-
-
-# ============================================================
-# WARNING RENDERER
-# ============================================================
-
-def render_warning(risk_data):
-
-    if not risk_data:
-
-        return
-
-    should_warn = bool(
-        risk_data.get(
-            "should_warn",
-            False,
-        )
-    )
-
-    if should_warn:
-
-        st.write("")
-
-        st.error(
-            "🚨 POSSIBLE FRAUD DETECTED"
-        )
-
-        st.markdown(
-            "**This conversation contains suspicious behavior.**"
-        )
-
-        st.markdown(
-            "**Do not share OTPs, PINs, passwords, "
-            "or banking details.**"
-        )
+warning_placeholder = st.empty()
 
 
 # ============================================================
 # INITIAL DASHBOARD
 # ============================================================
 
-render_transcript(
-    st.session_state.visible_transcript
-)
+render_transcript(transcript_placeholder)
+render_risk(risk_placeholder)
+render_signals(signals_placeholder)
+render_assessment(assessment_placeholder)
+render_warning(warning_placeholder)
 
-render_risk(
-    st.session_state.risk_data
-)
 
-render_signals(
-    st.session_state.risk_data
-)
+# ============================================================
+# STOP CALL
+# ============================================================
 
-render_assessment(
-    st.session_state.risk_data
-)
+if stop_clicked:
+    st.session_state.call_running = False
+    st.session_state.call_started = False
+    st.session_state.should_warn = False
+    st.session_state.alarm_played = False
+
+    st.rerun()
 
 
 # ============================================================
 # START CALL
 # ============================================================
 
-if start_call:
+if start_clicked:
+
+    script = load_script(st.session_state.scenario)
+
+    if not script:
+        st.stop()
+
+    # Reset call state
+    st.session_state.call_running = True
+    st.session_state.call_started = True
+    st.session_state.session_id = (
+        f"demo_{int(time.time())}"
+    )
+
+    st.session_state.transcript = []
+    st.session_state.risk_score = 0.0
+    st.session_state.signals = []
+    st.session_state.reasoning = (
+        "AI analysis will appear as the conversation progresses."
+    )
+    st.session_state.should_warn = False
+    st.session_state.alarm_played = False
+
+    # Update dashboard
+    render_transcript(transcript_placeholder)
+    render_risk(risk_placeholder)
+    render_signals(signals_placeholder)
+    render_assessment(assessment_placeholder)
+    render_warning(warning_placeholder)
+
+    ws = None
 
     try:
 
         # ----------------------------------------------------
-        # Load selected scenario
-        # ----------------------------------------------------
-
-        script = load_demo_script(
-            call_type
-        )
-
-        # ----------------------------------------------------
-        # Create unique session
-        # ----------------------------------------------------
-
-        session_id = (
-            f"call_{int(time.time() * 1000)}"
-        )
-
-        st.session_state.call_started = True
-        st.session_state.call_running = True
-        st.session_state.call_type = call_type
-        st.session_state.session_id = session_id
-        st.session_state.script = script
-        st.session_state.visible_transcript = []
-        st.session_state.risk_data = None
-        st.session_state.backend_error = None
-
-        # ----------------------------------------------------
-        # Connect to backend
+        # ONE WEBSOCKET CONNECTION FOR THE WHOLE CALL
         # ----------------------------------------------------
 
         ws = websocket.create_connection(
@@ -1153,192 +864,139 @@ if start_call:
             timeout=30,
         )
 
-        try:
+        for chunk in script:
 
-            # =================================================
-            # REAL-TIME CHUNK LOOP
-            # =================================================
+            # -----------------------------------------------
+            # ADD MESSAGE TO VISIBLE TRANSCRIPT
+            # -----------------------------------------------
 
-            for index, chunk in enumerate(
-                script
-            ):
-
-                # ---------------------------------------------
-                # Add chunk to visible transcript
-                # ---------------------------------------------
-
-                st.session_state.visible_transcript.append(
-                    chunk
-                )
-
-                render_transcript(
-                    st.session_state.visible_transcript
-                )
-
-                # ---------------------------------------------
-                # Prepare backend payload
-                # ---------------------------------------------
-
-                payload = {
-                    "session_id":
-                        session_id,
-
-                    "speaker":
-                        chunk["speaker"],
-
-                    "timestamp":
-                        float(
-                            chunk["timestamp"]
-                        ),
-
-                    "text":
-                        chunk["text"],
+            st.session_state.transcript.append(
+                {
+                    "speaker": chunk["speaker"],
+                    "text": chunk["text"],
                 }
+            )
 
-                # ---------------------------------------------
-                # Send to FastAPI
-                # ---------------------------------------------
+            render_transcript(transcript_placeholder)
 
-                ws.send(
-                    json.dumps(
-                        payload
-                    )
-                )
+            # -----------------------------------------------
+            # SEND CHUNK TO BACKEND
+            # -----------------------------------------------
 
-                # ---------------------------------------------
-                # Receive Groq/AI response
-                # ---------------------------------------------
+            payload = {
+                "session_id": st.session_state.session_id,
+                "speaker": chunk["speaker"],
+                "text": chunk["text"],
+                "timestamp": chunk.get(
+                    "timestamp",
+                    time.time(),
+                ),
+            }
 
-                raw_response = ws.recv()
+            ws.send(json.dumps(payload))
 
-                risk_data = json.loads(
-                    raw_response
-                )
+            # -----------------------------------------------
+            # RECEIVE AI RESPONSE
+            # -----------------------------------------------
 
-                # ---------------------------------------------
-                # Save response
-                # ---------------------------------------------
+            response_text = ws.recv()
 
-                st.session_state.risk_data = (
-                    risk_data
-                )
+            response = json.loads(response_text)
 
-                # ---------------------------------------------
-                # Update dashboard
-                # ---------------------------------------------
+            # -----------------------------------------------
+            # UPDATE RISK
+            # -----------------------------------------------
 
-                render_risk(
-                    risk_data
-                )
+            st.session_state.risk_score = float(
+                response.get("risk_score", 0.0)
+            )
 
-                render_signals(
-                    risk_data
-                )
+            st.session_state.signals = response.get(
+                "signals",
+                [],
+            )
 
-                render_assessment(
-                    risk_data
-                )
+            st.session_state.reasoning = response.get(
+                "reasoning",
+                "No reasoning returned.",
+            )
 
-                # ---------------------------------------------
-                # Warning appears immediately
-                # ---------------------------------------------
+            st.session_state.should_warn = bool(
+                response.get("should_warn", False)
+            )
 
-                if risk_data.get(
-                    "should_warn",
-                    False,
-                ):
+            # -----------------------------------------------
+            # UPDATE UI
+            # -----------------------------------------------
 
-                    render_warning(
-                        risk_data
-                    )
+            render_risk(risk_placeholder)
+            render_signals(signals_placeholder)
+            render_assessment(assessment_placeholder)
+            render_warning(warning_placeholder)
 
-                # ---------------------------------------------
-                # Simulate natural conversation timing
-                # ---------------------------------------------
+            # -----------------------------------------------
+            # ALARM
+            # -----------------------------------------------
 
-                if index < len(script) - 1:
+            if (
+                st.session_state.should_warn
+                and not st.session_state.alarm_played
+            ):
+                st.session_state.alarm_played = True
 
-                    time.sleep(
-                        CHUNK_DELAY
-                    )
+                # Display the alarm player.
+                # It is triggered immediately after the user
+                # has interacted with Start Call.
+                play_alarm()
 
-        finally:
+            # -----------------------------------------------
+            # WAIT BEFORE NEXT TRANSCRIPT CHUNK
+            # -----------------------------------------------
 
+            time.sleep(CHUNK_DELAY)
+
+        # ----------------------------------------------------
+        # CALL FINISHED
+        # ----------------------------------------------------
+
+        if ws:
             ws.close()
-
-        # ----------------------------------------------------
-        # Call completed
-        # ----------------------------------------------------
 
         st.session_state.call_running = False
 
-        st.session_state.call_started = True
+        st.success(
+            f"{st.session_state.scenario} simulation completed."
+        )
 
-        # ----------------------------------------------------
-        # Final dashboard refresh
-        # ----------------------------------------------------
+        time.sleep(0.5)
 
         st.rerun()
 
-    except FileNotFoundError:
-
-        st.session_state.call_started = False
-        st.session_state.call_running = False
-        st.session_state.script = []
-        st.session_state.visible_transcript = []
-        st.session_state.risk_data = None
-
-        st.error(
-            f"Demo file not found in: {DEMO_DIR}"
-        )
-
-        st.code(
-            "Demo/scam_call_script.json\n"
-            "Demo/normal_call_script.json"
-        )
-
-    except websocket.WebSocketException as e:
+    except websocket.WebSocketException as exc:
 
         st.session_state.call_running = False
-        st.session_state.backend_error = str(e)
 
         st.error(
-            "🚨 Could not connect to the FastAPI backend."
+            "Could not connect to the Fraud Guardian backend.\n\n"
+            f"Backend URL: {BACKEND_WS_URL}\n\n"
+            f"Details: {exc}"
         )
 
-        st.code(
-            f"Backend: {BACKEND_WS_URL}\n\n"
-            f"Error: {e}"
-        )
-
-    except Exception as e:
+    except Exception as exc:
 
         st.session_state.call_running = False
-        st.session_state.backend_error = str(e)
 
         st.error(
-            "🚨 An error occurred during the call simulation."
+            f"An error occurred during the call simulation: {exc}"
         )
 
-        st.code(
-            str(e)
-        )
+    finally:
 
-
-# ============================================================
-# FINAL WARNING
-# ============================================================
-
-if (
-    st.session_state.call_started
-    and not st.session_state.call_running
-    and st.session_state.risk_data
-    and not start_call
-):
-
-    render_warning(
-        st.session_state.risk_data
-    )
+        if ws is not None:
+            try:
+                ws.close()
+            except Exception:
+                pass
 
 
 # ============================================================
@@ -1347,9 +1005,7 @@ if (
 
 st.markdown(
     '<div class="footer">'
-    '🛡️ Fraud Guardian'
-    '&nbsp;•&nbsp;'
-    'Protecting you from fraud, in real time.'
-    '</div>',
+    "Fraud Guardian • Real-Time AI In-Call Fraud Detection"
+    "</div>",
     unsafe_allow_html=True,
 )

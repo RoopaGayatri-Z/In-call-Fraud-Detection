@@ -8,3 +8,4 @@ pydantic
 httpx
 sqlalchemy
 pytest
+websocket-client
