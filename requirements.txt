@@ -2,7 +2,7 @@ fastapi
 uvicorn[standard]
 websockets
 streamlit
-anthropic
+groq
 python-dotenv
 pydantic
 httpx

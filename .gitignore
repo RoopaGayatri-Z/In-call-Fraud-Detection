@@ -218,9 +218,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 
-__pycache__/
-*.pyc
-*.db
-*.sqlite3
-test_backend.py
-.venv/
+echo "__pycache__/" > .gitignore
+echo "*.pyc" >> .gitignore
+echo "*.db" >> .gitignore
+echo "*.sqlite3" >> .gitignore
+echo ".env" >> .gitignore
+echo "test_backend.py" >> .gitignore
+echo ".venv/" >> .gitignore
