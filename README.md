@@ -101,10 +101,6 @@ In-call-Fraud-Detection/
   - Simulated scam call script that triggers warnings  
   - Normal call script that should **not** trigger false alarms  
 
-### Application Interface
-
-![Fraud Guardian Dashboard Screenshot]("C:\Users\Roopa\Downloads\fraud_detection.jpeg")
-*(Example view of the Streamlit dashboard capturing an ongoing scam attempt with high-risk signals).*
 
 ---
 
