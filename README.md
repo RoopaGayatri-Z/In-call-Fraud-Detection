@@ -1,7 +1,3 @@
-# In-call-Fraud-Detection
-Detects that the person is being coached by a scammer in real-time and warns the person regarding the scam
-
-
 # In-call-Fraud-Detection (Fraud Guardian)
 
 **Real-time LLM-powered detection of social-engineering fraud during live calls.**
