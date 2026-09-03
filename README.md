@@ -286,10 +286,4 @@ You can extend this with:
 All rights reserved. This repository is a proof-of-concept prototype and is currently not licensed for public distribution, modification, or commercial use.
 
 
----
 
-## Contact
-
-For questions, collaboration, or feedback:
-
-- GitHub: https://github.com/RoopaGayatri-Z/In-call-Fraud-Detection  
