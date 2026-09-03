@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+__pycache__/
+*.pyc
+*.db
+*.sqlite3
+.env
+test_backend.py
+.venv/
+fraud_detection.db
