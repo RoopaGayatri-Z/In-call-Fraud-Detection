@@ -101,6 +101,11 @@ In-call-Fraud-Detection/
   - Simulated scam call script that triggers warnings  
   - Normal call script that should **not** trigger false alarms  
 
+### Application Interface
+
+![Fraud Guardian Dashboard Screenshot]("C:\Users\Roopa\Downloads\fraud_detection.jpeg")
+*(Example view of the Streamlit dashboard capturing an ongoing scam attempt with high-risk signals).*
+
 ---
 
 ## Tech Stack
@@ -282,7 +287,8 @@ You can extend this with:
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+All rights reserved. This repository is a proof-of-concept prototype and is currently not licensed for public distribution, modification, or commercial use.
+
 
 ---
 
