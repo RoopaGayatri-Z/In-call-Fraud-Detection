@@ -1,0 +1,10 @@
+[
+  {"speaker": "caller", "text": "Hello, I'm calling from your bank's fraud prevention department, this is urgent.", "timestamp": 0},
+  {"speaker": "user", "text": "Oh no, is something wrong with my account?", "timestamp": 4},
+  {"speaker": "caller", "text": "Yes, we've detected suspicious activity. We need to act right now before more money is lost.", "timestamp": 8},
+  {"speaker": "user", "text": "Okay, what should I do?", "timestamp": 13},
+  {"speaker": "caller", "text": "Please don't hang up or tell anyone, including your family, this is a confidential security matter.", "timestamp": 17},
+  {"speaker": "user", "text": "Alright, I won't say anything.", "timestamp": 23},
+  {"speaker": "caller", "text": "I'm going to send an OTP to your phone. Read it out to me so I can verify your identity.", "timestamp": 27},
+  {"speaker": "user", "text": "Okay, I got a code, it's...", "timestamp": 34}
+]

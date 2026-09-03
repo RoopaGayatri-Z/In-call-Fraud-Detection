@@ -1,0 +1,8 @@
+[
+  {"speaker": "caller", "text": "Hey, it's mom, I need to talk to you urgently about something.", "timestamp": 0},
+  {"speaker": "user", "text": "What's wrong?", "timestamp": 5},
+  {"speaker": "caller", "text": "Your dad's blood pressure medicine ran out, can you pick it up from the pharmacy today?", "timestamp": 9},
+  {"speaker": "user", "text": "Yeah sure, I'll go after work.", "timestamp": 15},
+  {"speaker": "caller", "text": "Thanks, also can you transfer me two thousand rupees for groceries this week?", "timestamp": 20},
+  {"speaker": "user", "text": "Sure, I'll send it now.", "timestamp": 26}
+]
