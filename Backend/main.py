@@ -49,7 +49,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 score_response = process_chunk(chunk)
 
             # 3. Log event to SQLite database
-            log_event(chunk, score_response)
+            if score_response.should_warn:
+                log_event(chunk, score_response)
 
             # 4. Return serialized evaluation to frontend
             await websocket.send_text(score_response.model_dump_json())
