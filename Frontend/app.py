@@ -36,7 +36,7 @@ CHUNK_DELAY = 1.5
 # ============================================================
 
 st.set_page_config(
-    page_title="Fraud Guardian",
+    page_title="FraudGuard",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -168,7 +168,7 @@ section[data-testid="stSidebar"] * {
 
 .card {
     background: rgba(255,255,255,0.055);
-    border: 1px solid rgba(255,255,255,0.09);
+    border: 1px solid rgba(212,175,55,0.4);
     border-radius: 20px;
     padding: 22px;
     margin-bottom: 18px;
@@ -500,7 +500,7 @@ def risk_level(score):
 
 def render_header():
     st.markdown(
-        '<div class="main-title">🛡️ Fraud Guardian</div>',
+        '<div class="main-title">🛡️ FraudGuard</div>',
         unsafe_allow_html=True,
     )
 
@@ -523,7 +523,7 @@ def render_header():
 def render_sidebar():
     with st.sidebar:
         st.markdown(
-            '<div class="sidebar-title">🛡️ Fraud Guardian</div>',
+            '<div class="sidebar-title">🛡️ FraudGuard</div>',
             unsafe_allow_html=True,
         )
 
